@@ -7,9 +7,15 @@ The research assesses whether accounting for individual heterogeneity affects in
 ## Repository contents:
 
 `Population_data_1972-2012.txt`: Data on encounter histories, growth and clutch sizes of mature female snapping turtles in Algonquin Park, Canada, from 1972-2012.
+
 `Population_data_2012-2012.txt`: Data on encounter histories of mature female snapping turtles in Algonquin Park, Canada, from 2012–2022.
+
 `Population_model_with_individual_heterogeneity.txt`: OpenBUGS code for modelling dynamics of a snapping turtle population while accounting for size-dependence in survival and reproduction rates of adult females and individual heterogeneity in growth parameters and size-specific reproductive output.
+
 `Population_model_without_individual_heterogeneity.txt`: OpenBUGS code for modelling dynamics of a snapping turtle population while accounting for size-dependence in survival and reproduction rates of adult females but assuming there is no individual heterogeneity in rates.
+
 `Population_model_without_size-dependence.txt`: OpenBUGS code for modelling dynamics of a snapping turtle population while while assuming no size-dependence in survival or reproduction rates of adult females.
+
 `Jolly-Seber_model.txt`: Jolly-Seber model for estimating annual abundances of mature female snapping turtles from encounter history data.
+
 `Age_at_maturity_distribution`: OpenBUGS code and data for obtaining an age-at-maturity distribution for female snapping turtles based on minimum and maximum ages at maturity for known-aged females.
