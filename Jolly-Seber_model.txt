@@ -1,0 +1,70 @@
+Jolly-Seber model for estimating annual abundances of mature female snapping turtles from encounter history data (data are in file "Population_data_2012-2022.txt").
+
+Model{
+
+	# Priors
+	a.phi ~ dnorm(0, 0.1)				# logit of annual survival probability
+	a.p ~ dnorm(0, 0.1)				# logit of mean detection probability if at Sasajewun
+	b.site.p ~ dnorm(0, 0.1)			# effect on detection probability if at another site
+	s.t.phi ~ dunif(0, 2)				# among-year SD in logit survival
+	s.t.p ~ dunif(0, 2)				# among-year SD in logit detection probability
+	tau.t.phi <- pow(s.t.phi, -2)			# next 2 lines convert to precision
+	tau.t.p <- pow(s.t.p, -2)
+	psi ~ dbeta(1,1)				# overall probability that one of the M individuals exists
+	beta[1:n.years] ~ ddirch(alpha[])		# distribution of probabilities of entry among years
+
+	# Assign random year effects
+	for (j in 1:n.years) {
+		re.t.p[j] ~ dnorm(0, tau.t.p)		# random year effect on detection probability
+		re.t.phi[j] ~ dnorm(0, tau.t.phi)	# random year effect on survival
+	}
+
+	# Priors for site transition probabilities
+	# Sites are classified as Sasajewun (higher detection prob.), Amoyoa (only searched some years), or other
+	ps.start[1:3] ~ ddirch(alpha.site[])		# prob. of being in Sasajewun(1), Amoyoa(2) or other(3) at start
+	ps[1,1:3] ~ ddirch(alpha.site[])		# prob. of being in Sasajewun(1), Amoyoa(2) or other(3) if in Sasajewun last year
+	ps[2,1:3] ~ ddirch(alpha.site[])		# prob. of being in Sasajewun(1), Amoyoa(2) or other(3) if in Amoyoa last year
+	ps[3,1:3] ~ ddirch(alpha.site[])		# prob. of being in Sasajewun(1), Amoyoa(2) or other(3) if in other site last year
+	
+	# Model inclusion and entry times
+	for (i in 1:M) {	# for each turtle...		
+		w[i] ~ dbern(psi)			# sample whether it existed (for augmented turtles)
+		b[i] ~ dcat(beta[]) I(,first[i])	# sample recruitment year ("first[i]" is the latest possible)
+	}
+	Lambda <- sum(w[])				# add up superpopulation size
+
+	# Model survival and detection
+	for (i in 1:M) {	# for each NMRC female, including hypothetical individuals...					
+		for (j in 1:n.years) {		# for each year of study...
+			notyetborn[i,j] <- step(b[i]-j-1)	# calculate whether or not she has recruited yet
+		}
+		alive[i,1] <- w[i]*(1-notyetborn[i,1])		# calculate whether it has recruited and is alive at start of study
+		site[i,1] ~ dcat(ps.start[])			# assign it to Sasajewun, Amoyoa or other sites
+		for (j in 1:n.years) {
+			logit(p[i,j]) <- a.p+re.t.p[j]+b.site.p*(1-equals(site[i,j],1))					# capture prob. if alive and site surveyed	
+			pcap[i,j] <- alive[i,j]*p[i,j]*(amo.search[j]*equals(site[i,j],2)+(1-equals(site[i,j],2)))	# capture probability	
+			y[i,j] ~ dbern(pcap[i,j])									# sample encounter history
+		}
+		for (j in 2:n.years) {	# from year 2 until end of study...
+			site[i,j] ~ dcat(ps[site[i,j-1],1:3])							# sample whether she has changed site category
+			logit(phi[i,j]) <- a.phi+re.t.phi[j]							# annual survival prob. if alive last year
+			palive[i,j] <-  notyetdead[i,j-1]*(notyetborn[i,j-1]+(1-notyetborn[i,j-1])*phi[i,j])	# prob. of not being dead
+			notyetdead[i,j] ~ dbern(palive[i,j])							# sample whether not yeat dead
+			alive[i,j] <- w[i]*(1-notyetborn[i,j])*notyetdead[i,j]					# whether entered and still alive
+		}
+	}
+
+	# Derive abundances and numbers entering each year
+	for(j in 1:n.years) {		# for each year of study...
+		N[j] <- sum(alive[1:M,j])	# add up number of live mature females
+	}
+	for(i in 1:M) {			# for each NMRC female....
+		for(j in 2:n.years) {		# for each year after first year
+			bij[i,j] <- equals(alive[i,j-1],0)*equals(alive[i,j],1)		# assign 1 to year she recruits, 0 otherwise
+		}
+	}
+	for(j in 2:n.years) {		# from year 2 until end of study...
+		B[j] <- sum(bij[1:M,j])		# calculate the number of recruits
+	}
+
+}

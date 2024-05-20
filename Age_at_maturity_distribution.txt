@@ -1,0 +1,28 @@
+OpenBUGS code and data for obtaining an age-at-maturity distribution for female snapping turtles based on minimum and maximum ages at maturity for known-aged females. 
+
+Model {
+
+	# Priors
+	mu.log ~ dnorm(0,0.1)		# mean of log-normal distribution
+	sd.log ~ dunif(0,1)		# SD of log-normal distribution	
+	tau.log <- pow(sd.log,-2)	# convert SD to precision		
+
+	# Sample data
+	for (i in 1:n) {		# for each female...
+		x.c[i] ~ dlnorm(mu.log, tau.log) I(min[i],max[i])	# sample age at maturity from log-normal distribution
+		x[i] <- round(x.c[i])					# convert to discrete age
+	}
+
+	# Generate posterior distribution for age at maturity
+	x.new.c ~ dlnorm(mu.log, tau.log)	# generate continuous distribution 
+	x.new <- round(x.new.c)			# convert to discrete distribution
+}
+
+Data on minimum and maximum maturation ages at maturity for known-aged females from 1983-1992 hatchlings
+
+list(
+n=13,						# no. of females
+x.c=c(NA,NA,NA,NA,NA,NA,NA,NA,16,NA,NA,NA,NA),	# known ages at maturity
+min=c(12,16,15,13,14,20,12,18,16,9,17,9,15),	# minimum ages at maturity
+max=c(16,17,17,23,19,26,19,26,16,16,23,31,23)	# maximum ages at maturity
+)

@@ -1,0 +1,239 @@
+OpenBUGS code for modelling dynamics of a snapping turtle population while accounting for size-dependence in survival and reproduction rates of adult females but assuming there is no individual heterogeneity in rates. The full model ("Population_model_with_individual_heterogeneity.txt") was reduced by removing individual heterogeneity in growth parameters and size-specific reproductive output, and by allocating eggs produced each year to one future recruitment year (based on median age at maturity) rather than allocating them to multiple recruitment years (based on the age-at-maturity distribution). This is a female-only model where individuals are considered to enter the population (i.e., recruit) when they reach sexual maturity, which at Algonquin Park occurs when females reach ca. 24 cm midline carapace length. The model provides estimates of growth, reproduction and survival parameters, annual estimates of abundance and recruitment over the course of the study, and projects future abundances. It was fitted to data on enounter histories, carapace lengths and clutch sizes of adult females in the North Madawaska River catchment (NMRC), additional data on carapace lengths and clutch sizes for females in the surrounding landscape, and data on the median age at maturation for known-age females (data are in file "Population_data_1972-2012.txt").
+
+Initial values may need to be given such as the ones below.
+list(a=30, logk=-0.5, s.e.L=0.17, s.t.k=0.3, a.CS=27, b.L.CS=1, s.t.CS=0.01, a.phi=2, b.L.phi=0, a.p=1, b.site.p=-1, s.t.phi=0.6, s.t.p=0.5)
+list(a=33, logk=0.2, s.e.L=0.2, s.t.k=0.8, a.CS=31, b.L.CS=2, s.t.CS=0.5, a.phi=3, b.L.phi=0.25, a.p=2, b.site.p=0, s.t.phi=1.6, s.t.p=1)
+
+Model {
+
+	# PART A: ANALYSIS OF VITAL RATES, ABUNDANCE AND RECRUITMENT TO END OF STUDY
+
+	# Priors for hierarchical von Bertalanffy growth model
+	# Note that parameters for individual heterogeneity (s.a, s.k) have been removed
+	a ~ dnorm(32, 0.1)			# mean asymptotic carapace length (a)
+	logk ~ dnorm(0,1)			# log of mean growth rate (k)
+	s.t.k ~ dunif(0,2)			# among-year SD in log of growth parameter
+	s.e.L ~ dunif(0,1)			# residual SD in carapace length
+	tau.e.L <- 1/pow(s.e.L,2)		# next 2 lines convert SD to precision
+	tau.t.k <- 1/pow(s.t.k,2)		# convert SD to precision
+
+	# Priors for reproductive output model
+	# Note that parameter for individual heterogeneity (s.CS) has been removed
+	a.CS ~ dnorm(30, 0.1)			# mean clutch size (CS) for a 24-cm female
+	b.L.CS ~ dnorm(1.5, 1)			# effect of 1 cm increase in carapace length on mean CS
+	s.t.CS ~ dunif(0,10)			# among-year SD in CS
+	tau.t.CS <- 1/pow(s.t.CS,2)		# convert SD to precision
+
+	# Assign random year effects on growth and reproductive output
+	for (j in 1:n.years) {	# for each year of study...
+		re.t.k[j] ~ dnorm(0,tau.t.k)	# sample random year effect on growth parameter k
+		re.t.CS[j] ~ dnorm(0,tau.t.CS)	# sample random year effect on clutch size
+	}
+
+	# Model growth and clutch sizes of NMRC females (includes hypothetical females added through data augmentation) 
+	# These females' entry years are modelled, so they start to grow and produce eggs at maturity and stop when they die
+	# Note that code for assigning individual parameters for growth and reproduction rates have been removed
+	for (i in 1:M.obs) {
+		L[i,1] ~ dunif(22,36)	# prior for initial carapace lengths (L) of each observed individual
+	}
+	for (i in M.obs+1:M) {
+		L[i,1] <- 24		# assign L at recruitment for each hypothetical unobserved individual
+	}
+	for (i in 1:M) {		# for each NMRC female...
+		L.alive[i,1] <- L[i,1]*alive[i,1]							# for calculating average length of live females
+		mu.CS[i,1] <- alive[i,1]*max(0,a.CS+b.L.CS*(cut(L[i,1])-24)+re.t.CS[1]) 		# calculate expected CS year 1
+		CS[i,1] ~ dpois(mu.CS[i,1])								# sample CS year 1
+		for (j in 2:n.years) {							# for each subsequent year ...
+			log(k.t[i,j]) <- logk+re.t.k[j]							# calculate individual's growth parameter k for current year
+			mu[i,j] <- step(j-b[i]-1)*(a-(a-L[i,j-1])*exp(-k.t[i,j]/a)) + (1-step(j-b[i]-1))*L[i,j-1] # expected L under hierarchical VB model 
+														  # (set to initial L until recruits)
+			L[i,j] ~ dnorm(mu[i,j],tau.e.L)							# sample observed L or generate missing value
+			L.alive[i,j] <- L[i,j]*alive[i,j]						# for calculating average length of live females
+			mu.CS[i,j] <- alive[i,j]*max(0,a.CS+b.L.CS*(cut(L[i,j])-24)+re.t.CS[j])		# calculate expected CS (set to 0 until recruits)
+			CS[i,j] ~ dpois(mu.CS[i,j])							# sample observed CS or generate missing value
+		}	
+	}
+
+	# Model growth and clutch sizes of other females in data set (i.e., from outside NMRC)
+	# The data for these females is just modelled from their first to last capture
+	# Initial sizes don't need to be modelled because these females were all measured on their first encounter
+	for (i in M+1:n.ind.growth) {		# for each female from outside NMRC...
+		mu.CS[i,first[i]] <- max(0,a.CS+b.L.CS*(cut(L[i,first[i]])-24)+re.t.CS[first[i]])	# calculate expected CS
+		CS[i,first[i]] ~ dpois(mu.CS[i,first[i]])						# sample current CS
+		for (j in first[i]+1:last[i]) {						# for each subsequent year ...
+			log(k.t[i,j]) <- logk+re.t.k[j]							# calculate individual's growth parameter k for current year
+			mu[i,j] <- a-(a-L[i,j-1])*exp(-k.t[i,j]/a) 					# calculate expected L under hierarchical VB model
+			L[i,j] ~ dnorm(mu[i,j],tau.e.L)							# sample observed L or generate missing value
+			mu.CS[i,j] <- a.CS+b.L.CS*(cut(L[i,j])-24)+re.t.CS[j]				# calculate expected CS
+			CS[i,j] ~ dpois(mu.CS[i,j])							# sample observed CS or generate missing value
+		}	
+	}
+
+	# Priors for Jolly-Seber model
+	a.phi ~ dnorm(0, 0.1)				# logit of annual survival probability for a 24-cm female
+	b.L.phi ~ dnorm(0,0.1)				# effect of 1 cm increase in L on logit survival
+	a.p ~ dnorm(0, 0.1)				# logit of mean detection probability if at Sasajewun (highest detection probability)
+	b.site.p ~ dnorm(0, 0.1)			# effect on detection probability if at another site
+	s.t.phi ~ dunif(0, 2)				# among-year SD in logit survival
+	s.t.p ~ dunif(0, 2)				# among-year SD in logit detection probability
+	tau.t.phi <- pow(s.t.phi, -2)			# next 2 lines convert to precision
+	tau.t.p <- pow(s.t.p, -2)
+	psi ~ dbeta(1,1)				# overall probability that one of the M individuals exists
+	beta[1:n.years] ~ ddirch(alpha[])		# distribution of probabilities of entry among years
+
+	# Priors for site transition probabilities
+	# Sites are classified as Sasajewun (higher detection prob.), Amoyoa (only searched some years), or other
+	ps.start[1:3] ~ ddirch(alpha.site[])		# prob of being in Sasajewun(1), Amoyoa(2) or other(3) at start
+	ps[1,1:3] ~ ddirch(alpha.site[])		# prob of being in Sasajewun(1), Amoyoa(2) or other(3) if in Sasajewun last year
+	ps[2,1:3] ~ ddirch(alpha.site[])		# prob of being in Sasajewun(1), Amoyoa(2) or other(3) if in Amoyoa last year
+	ps[3,1:3] ~ ddirch(alpha.site[])		# prob of being in Sasajewun(1), Amoyoa(2) or other(3) if in other site last year
+
+	# Assign random year effects
+	for (j in 1:n.years) {	# for each year of study...
+		re.t.p[j] ~ dnorm(0, tau.t.p)		# random year effect on detection probability
+		re.t.phi[j] ~ dnorm(0, tau.t.phi)	# random year effect on survival
+	}
+
+	# Model inclusion and entry times
+	for (i in 1:M) {	# for each NMRC female, including hypothetical individuals...	
+		w[i] ~ dbern(psi)			# sample whether she existed
+		b[i] ~ dcat(beta[]) I(,first[i])	# sample year that she entered population ("first[i]" is the latest possible year)
+	}
+	Lambda <- sum(w[])				# add up superpopulation size (no. females present sometime over study)
+
+	# Model survival and detection
+	for (i in 1:M) {	# for each NMRC female...						
+		for (j in 1:n.years) {		# for each year of study...
+			notyetborn[i,j] <- step(b[i]-j-1)	# determine whether or not she had entered population (as mature female) yet
+		}
+		alive[i,1] <- w[i]*(1-notyetborn[i,1])		# determine whether she had entered and was alive at start of study
+		site[i,1] ~ dcat(ps.start[])			# assign her to Sasajewun, Amayoa or other sites
+		for (j in 1:n.years) {	# for each year of study...
+			logit(p[i,j]) <- a.p+re.t.p[j]+b.site.p*(1-equals(site[i,j],1))					# capture prob. if alive and site surveyed	
+			pcap[i,j] <- alive[i,j]*p[i,j]*(amo.search[j]*equals(site[i,j],2)+(1-equals(site[i,j],2))) 	# capture probability	
+			y[i,j] ~ dbern(pcap[i,j])									# sample encounter history
+		}
+		for (j in 2:n.years) {	# from year 2 until end of study...
+			site[i,j] ~ dcat(ps[site[i,j-1],1:3])							# sample whether she has changed site category
+			logit(phi[i,j]) <- a.phi+b.L.phi*(cut(L[i,j-1])-24)+re.t.phi[j] 			# annual survival prob. if alive last year
+			palive[i,j] <-  notyetdead[i,j-1]*(notyetborn[i,j-1]+(1-notyetborn[i,j-1])*phi[i,j]) 	# prob. of not being dead
+			notyetdead[i,j] ~ dbern(palive[i,j])							# sample whether not yet dead
+			alive[i,j] <- w[i]*(1-notyetborn[i,j])*notyetdead[i,j]					# whether entered and still alive
+		}
+	}
+
+	# Derive annual abundances and average carapace lengths
+	for(j in 1:n.years) {		# for each year of study...
+		N[j+year.start-1] <- sum(alive[1:M,j])					# add up number of live mature females
+		L.tot[j+year.start-1] <- sum(L.alive[1:M,j])				# add up total carapace length of those females
+		L.ave[j+year.start-1] <- L.tot[j+year.start-1]/N[j+year.start-1]	# calculate their average carapace length
+	}
+
+	# Derive egg production each year and allocate to potential recruitment year
+	# Note that age at maturity (AM) assumed constant under this model, so code for allocating eggs into different AM cohorts has been removed
+	for(j in 1:n.years) {		# for each year of study...
+		eggs[j] <- sum(CS[1:M,j])			# add up number eggs produced
+		B.pot[j+year.start+matmed-1] <- eggs[j]		# which equals the number of potential recruits AM years into the future
+	}
+
+	# Derive number of females entering population (recruits) and dying each year of study
+	for(i in 1:M) {			# for each NMRC female....	
+		for(j in 2:n.years) {		# for each year of study...
+			bij[i,j] <- equals(alive[i,j-1],0)*equals(alive[i,j],1)			# assign 1 to year she enters, 0 otherwise
+		}
+	}
+	for(j in 2:n.years) {		# from year 2 until end of study...		
+		B[j+year.start-1] <- sum(bij[1:M,j])						# calculate number of recruits this year
+		D[j+year.start-1] <- N[j+year.start-2]-N[j+year.start-1]+B[j+year.start-1]	# calculate number of deaths this year
+		d[j+year.start-1] <- D[j+year.start-1]/N[j+year.start-2]			# calculate per capita death rate this year
+	}
+
+	# Compare realised to potential recruitment to calculate the probability of an egg producing a female recruit
+	# Totals calculated from first year that all recruits must be from eggs produced during study
+	B.pot.tot <- sum(B.pot[year.start+matmed:year.start+n.years-1])	# total no. of potential recruits
+	B.tot <- sum(B[year.start+matmed:year.start+n.years-1])		# total no. of female recruits
+	proprec <- B.tot/B.pot.tot					# calculate probability of an egg producing a female recruit
+	tau.proprec <- 1/(proprec*(1-proprec)/B.pot.tot)		# calculate precision of probabiblity estimate
+	prec ~ dnorm(proprec, tau.proprec)				# sample probability of an egg producing a female recruit 
+
+
+	# PART B: PROJECTIONS TO FUTURE YEARS
+	
+	# Assign annual random effects to future years
+	for (j in n.years+1:n.years+n.proj) {	# for each future year...
+		re.t.phi[j] ~ dnorm(0, tau.t.phi)			# sample random year effect on survival
+		re.t.k[j] ~ dnorm(0,tau.t.k)				# sample random year effect on growth parameter k
+		re.t.CS[j] ~ dnorm(0,tau.t.CS)				# sample random year effect on clutch size
+	}
+
+	# Model future growth, reproduction and survival of females in NMRC 1972-2012 superpopulation
+	for (i in 1:M) {		# for each NMRC female...
+		L.proj[i,n.years] <- L[i,n.years]			# create new variable for future carapace lengths (avoids adding NAs to data)
+		for (j in n.years+1:n.years+n.proj)  {			# for each future year ...
+			log(k.t[i,j]) <- logk+re.t.k[j]							# calculate individual's growth parameter k for that year
+			mu[i,j] <- a-(a-L.proj[i,j-1])*exp(-k.t[i,j]/a) 				# calculate expected carapace length
+			L.proj[i,j] ~ dnorm(mu[i,j],tau.e.L)						# sample carapace lenth (L.proj)
+			mu.CS[i,j] <- alive[i,j]*max(0,a.CS+b.L.CS*(cut(L.proj[i,j])-24)+re.t.CS[j]) 	# calculate expected clutch size
+			CS.proj[i,j] ~ dpois(mu.CS[i,j])						# sample clutch size (CS.proj)
+			logit(phi[i,j]) <- a.phi+b.L.phi*(cut(L.proj[i,j-1])-24)+re.t.phi[j]		# annual survival prob. if alive last year
+			palive[i,j] <- phi[i,j]*alive[i,j-1]						# calculate probability of being alive this year
+			alive[i,j] ~ dbern(palive[i,j])							# sample whether alive
+			}
+	}
+
+	# Model growth, reproduction and survival of hypothetical females entering population after end of study
+	# Note that parameters related to these hypothetical turtles are given an "aug" suffix
+	# Note that code for assigning individual random effects on growth and reproduction has been removed
+	for (i in 1:n.aug) {	# for each hypothetical recuit...
+	
+		# Set alive status and reproductive output to zero for each year before the individual potentially recruits
+		for (j in 1:first.aug[i]-1) {
+			alive.aug[i,j] <- 0			
+			CS.aug[i,j] <- 0
+		}
+
+		# Determine whether this female exists and assign her initial size and reproductive output
+		# Note that the number that exist in each cohort is determined by the recuitment (B) for that year
+		alive.aug[i,first.aug[i]] <- step(B[first.aug[i]+year.start-1]-order.aug[i])	# whether individual exists
+		L.aug[i,first.aug[i]] <- 24							# assign carapace length (L.aug) at recruitment
+		mu.CS.aug[i,first.aug[i]] <- alive.aug[i,first.aug[i]]*max(0,a.CS+b.L.CS*(cut(L.aug[i,first.aug[i]])-24)+re.t.CS[first.aug[i]])	
+												# calculate expected clutch size (CS.aug) in year of recruitment
+		CS.aug[i,first.aug[i]] ~ dpois(mu.CS.aug[i,first.aug[i]])			# sample CS.aug
+		
+		# Model subsequent growth, reproduction, and survival
+		for (j in first.aug[i]+1:n.years+n.proj) {			# for each year after the individual potentially recruits...
+			log(k.t.aug[i,j]) <- logk+re.t.k[j]								# individual's growth parameter k for that year
+			mu.aug[i,j] <- a-(a-L.aug[i,j-1])*exp(-k.t.aug[i,j]/a)  					# expected carapace length
+			L.aug[i,j] ~ dnorm(mu.aug[i,j],tau.e.L)								# sample carapace length (L.aug)
+			mu.CS.aug[i,j] <- alive.aug[i,j]*max(0,a.CS+b.L.CS*(cut(L.aug[i,j])-24)+re.t.CS[j]) 		# expected clutch size
+			CS.aug[i,j] ~ dpois(mu.CS.aug[i,j])								# sample clutch size (CS.aug)
+			logit(phi.aug[i,j]) <- a.phi+b.L.phi*(cut(L.aug[i,j-1])-24)+re.t.phi[j] 			# annual survival prob. if alive last year
+			palive.aug[i, j] <- phi.aug[i, j]*alive.aug[i, j-1]						# probability of being alive this year
+			alive.aug[i, j] ~ dbern(palive.aug[i, j])							# sample whether alive
+			}
+	}			
+	
+	# Derive population size each future year
+	for (j in n.years+1:n.years+n.proj)  {		# for each future year ... 
+		N.M[j+year.start-1] <- sum(alive[1:M,j])				# number alive from 1972-2012 superpopulation
+		N.new[j+year.start-1] <- sum(alive.aug[,j])				# number alive from future recruitment
+		N[j+year.start-1] <- N.M[j+year.start-1] + N.new[j+year.start-1]	# total number of adult females alive
+	}
+
+	# Derive egg production each year
+	# Note that this only needs to be done up to the last year that could produce eggs that become recruits
+	for (j in n.years+1: n.years+n.proj-matmed)  {	# for each future year...
+		eggs[j] <- sum(CS.proj[1:M,j])+sum(CS.aug[1:n.aug,j])			# add up number eggs produced
+	}
+
+	# Allocate eggs to potential recruitment years and sample numbers of recruits
+	# Note that age at maturity (AM) assumed constant under this model, so code for allocating eggs into different AM cohorts has been removed
+	for (j in n.years+1:n.years+n.proj-matmed) {	# for each future year ...
+		B.pot[j+year.start+matmed-1] <- eggs[j]				# no. potential recruits
+	}
+	for (j in n.years+1:n.years+n.proj) {		# for each future year ...
+		B[j+year.start-1] ~ dbin(prec, B.pot[j+year.start-1])		# no. actual recruits
+	}
+
+}
+
