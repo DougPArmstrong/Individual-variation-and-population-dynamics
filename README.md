@@ -18,6 +18,6 @@ The research assesses whether accounting for individual heterogeneity affects in
 
 `Jolly-Seber_model.txt`: Jolly-Seber model for estimating annual abundances of mature female snapping turtles from encounter history data.
 
-`Age_at_maturity_distribution`: OpenBUGS code and data for obtaining an age-at-maturity distribution for female snapping turtles based on minimum and maximum ages at maturity for known-aged females.
+`Age_at_maturity_distribution.txt`: OpenBUGS code and data for obtaining an age-at-maturity distribution for female snapping turtles based on minimum and maximum ages at maturity for known-aged females.
 
-`Output_from_population_models`: Output from the three different population models fitted to data on encounter histories, growth and clutch sizes of mature female snapping turtles in Algonquin Park, Canada, from 1972-2012.
+`Output_from_population_models.xlsx`: Output from the three different population models fitted to data on encounter histories, growth and clutch sizes of mature female snapping turtles in Algonquin Park, Canada, from 1972-2012.
